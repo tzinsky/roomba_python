@@ -1,0 +1,729 @@
+openapi: 3.1.0
+info:
+  title: dorita980 Reduced Python API (OpenAPI-like)
+  version: 0.1.0-draft
+  summary: Strict schema for reduced local MQTT-based Python API surface
+  description: |
+    This document models a non-HTTP Python client API using OpenAPI structure.
+    Paths represent RPC-style method contracts for RobotClient and discovery helpers.
+
+    Transport notes:
+    - Primary runtime transport is MQTT over TLS to robot LAN endpoint.
+    - Command operations map to MQTT publish on topic cmd.
+    - Preference operations map to MQTT publish on topic delta.
+
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+servers:
+  - url: mqtts://{host}:{port}
+    description: Local robot MQTT over TLS endpoint
+    variables:
+      host:
+        default: 192.168.1.100
+      port:
+        default: "8883"
+
+tags:
+  - name: RobotClient
+  - name: Discovery
+
+paths:
+  /client/connect:
+    post:
+      operationId: connect
+      tags: [RobotClient]
+      summary: Establish local MQTT/TLS session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectRequest'
+      responses:
+        '200':
+          description: Connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectResponse'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '503':
+          $ref: '#/components/responses/ConnectionError'
+
+  /client/disconnect:
+    post:
+      operationId: disconnect
+      tags: [RobotClient]
+      summary: Close active session
+      responses:
+        '200':
+          description: Disconnected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisconnectResponse'
+
+  /client/is-connected:
+    get:
+      operationId: isConnected
+      tags: [RobotClient]
+      summary: Return connection state
+      responses:
+        '200':
+          description: Connection state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IsConnectedResponse'
+
+  /client/commands/clean:
+    post:
+      operationId: clean
+      tags: [RobotClient]
+      summary: Send clean command
+      x-mqtt-topic: cmd
+      x-mqtt-command: clean
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandResultOk'
+        '502':
+          $ref: '#/components/responses/PublishError'
+
+  /client/commands/pause:
+    post:
+      operationId: pause
+      tags: [RobotClient]
+      summary: Send pause command
+      x-mqtt-topic: cmd
+      x-mqtt-command: pause
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandResultOk'
+        '502':
+          $ref: '#/components/responses/PublishError'
+
+  /client/commands/resume:
+    post:
+      operationId: resume
+      tags: [RobotClient]
+      summary: Send resume command
+      x-mqtt-topic: cmd
+      x-mqtt-command: resume
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandResultOk'
+        '502':
+          $ref: '#/components/responses/PublishError'
+
+  /client/commands/dock:
+    post:
+      operationId: dock
+      tags: [RobotClient]
+      summary: Send dock command
+      x-mqtt-topic: cmd
+      x-mqtt-command: dock
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandResultOk'
+        '502':
+          $ref: '#/components/responses/PublishError'
+
+  /client/commands/stop:
+    post:
+      operationId: stop
+      tags: [RobotClient]
+      summary: Send stop command
+      x-mqtt-topic: cmd
+      x-mqtt-command: stop
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandResultOk'
+        '502':
+          $ref: '#/components/responses/PublishError'
+
+  /client/preferences:
+    patch:
+      operationId: setPreferences
+      tags: [RobotClient]
+      summary: Patch robot preferences via delta state update
+      x-mqtt-topic: delta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPreferencesRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandResultOk'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '502':
+          $ref: '#/components/responses/PublishError'
+
+  /client/state:
+    post:
+      operationId: getState
+      tags: [RobotClient]
+      summary: Wait for required telemetry fields and return normalized state
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetStateRequest'
+      responses:
+        '200':
+          description: State snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotState'
+        '408':
+          $ref: '#/components/responses/TimeoutError'
+
+  /client/mission:
+    get:
+      operationId: getMission
+      tags: [RobotClient]
+      summary: Return mission snapshot including pose when available
+      parameters:
+        - $ref: '#/components/parameters/TimeoutParam'
+      responses:
+        '200':
+          description: Mission snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionSnapshot'
+        '408':
+          $ref: '#/components/responses/TimeoutError'
+
+  /client/mission/basic:
+    get:
+      operationId: getBasicMission
+      tags: [RobotClient]
+      summary: Return mission snapshot without requiring pose field
+      parameters:
+        - $ref: '#/components/parameters/TimeoutParam'
+      responses:
+        '200':
+          description: Basic mission snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionSnapshot'
+        '408':
+          $ref: '#/components/responses/TimeoutError'
+
+  /discovery/robots:
+    get:
+      operationId: discoverRobots
+      tags: [Discovery]
+      summary: UDP broadcast discovery for robots on local network
+      parameters:
+        - name: timeout
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0.1
+            default: 2.0
+        - name: broadcast_ip
+          in: query
+          required: false
+          schema:
+            type: string
+            default: 255.255.255.255
+        - name: port
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 65535
+            default: 5678
+      responses:
+        '200':
+          description: Discovered robots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RobotDiscoveryInfo'
+
+  /discovery/robot-public-info:
+    get:
+      operationId: getRobotPublicInfo
+      tags: [Discovery]
+      summary: Query one robot by IP for public discovery metadata
+      parameters:
+        - name: ip
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: ^(?:\d{1,3}\.){3}\d{1,3}$
+        - name: timeout
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0.1
+            default: 2.0
+        - name: port
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 65535
+            default: 5678
+      responses:
+        '200':
+          description: Robot public info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotDiscoveryInfo'
+        '404':
+          description: No robot response before timeout
+
+components:
+  parameters:
+    TimeoutParam:
+      name: timeout
+      in: query
+      required: false
+      schema:
+        type: number
+        minimum: 0.1
+
+  responses:
+    CommandResultOk:
+      description: Command publish acknowledged
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CommandResult'
+
+    AuthenticationError:
+      description: Authentication failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            default:
+              value:
+                code: authentication_error
+                message: Invalid robot credentials
+
+    ConnectionError:
+      description: Connection could not be established
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            default:
+              value:
+                code: connection_error
+                message: MQTT/TLS connection failed
+
+    PublishError:
+      description: Command publish failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            default:
+              value:
+                code: publish_error
+                message: Unable to publish command
+
+    ValidationError:
+      description: Input validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            default:
+              value:
+                code: validation_error
+                message: Preferences patch must include at least one field
+
+    TimeoutError:
+      description: Required telemetry not observed before timeout
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            default:
+              value:
+                code: timeout_error
+                message: Required fields unavailable before timeout
+
+  schemas:
+    ConnectRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - blid
+        - password
+        - host
+      properties:
+        blid:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+        host:
+          type: string
+          minLength: 1
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 8883
+        emit_interval:
+          type: number
+          minimum: 0.1
+          default: 0.8
+        connect_timeout:
+          type: number
+          minimum: 0.1
+          default: 10.0
+        command_timeout:
+          type: number
+          minimum: 0.1
+          default: 5.0
+        tls_legacy:
+          type:
+            - boolean
+            - 'null'
+        ciphers:
+          type:
+            - string
+            - 'null'
+
+    ConnectResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - connected
+      properties:
+        connected:
+          type: boolean
+          const: true
+
+    DisconnectResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - connected
+      properties:
+        connected:
+          type: boolean
+          const: false
+
+    IsConnectedResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - connected
+      properties:
+        connected:
+          type: boolean
+
+    GetStateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        required_fields:
+          type:
+            - array
+            - 'null'
+          items:
+            $ref: '#/components/schemas/StateField'
+          uniqueItems: true
+        timeout:
+          type:
+            - number
+            - 'null'
+          minimum: 0.1
+
+    SetPreferencesRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        carpet_boost_mode:
+          $ref: '#/components/schemas/CarpetBoostMode'
+        edge_clean_enabled:
+          type: boolean
+        cleaning_passes:
+          $ref: '#/components/schemas/CleaningPasses'
+        always_finish:
+          type: boolean
+      anyOf:
+        - required: [carpet_boost_mode]
+        - required: [edge_clean_enabled]
+        - required: [cleaning_passes]
+        - required: [always_finish]
+
+    CommandResult:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+        - topic
+        - command
+        - sent_at_unix
+        - request_payload
+      properties:
+        ok:
+          type: boolean
+        topic:
+          type: string
+          enum: [cmd, delta]
+        command:
+          type: string
+        sent_at_unix:
+          type: integer
+          minimum: 0
+        request_payload:
+          type: object
+          additionalProperties: true
+
+    PosePoint:
+      type: object
+      additionalProperties: false
+      required: [x, y]
+      properties:
+        x:
+          type: integer
+        y:
+          type: integer
+
+    Pose:
+      type: object
+      additionalProperties: false
+      required: [theta, point]
+      properties:
+        theta:
+          type: integer
+        point:
+          $ref: '#/components/schemas/PosePoint'
+
+    CleanMissionStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - cycle
+        - phase
+        - error
+      properties:
+        cycle:
+          type: string
+        phase:
+          type: string
+        error:
+          type: integer
+        not_ready:
+          type:
+            - integer
+            - 'null'
+        mssn_m:
+          type:
+            - integer
+            - 'null'
+        sqft:
+          type:
+            - integer
+            - 'null'
+        initiator:
+          type:
+            - string
+            - 'null'
+        n_mssn:
+          type:
+            - integer
+            - 'null'
+
+    BinStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        present:
+          type:
+            - boolean
+            - 'null'
+        full:
+          type:
+            - boolean
+            - 'null'
+
+    MissionSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - clean_mission_status
+        - observed_at_unix
+      properties:
+        clean_mission_status:
+          $ref: '#/components/schemas/CleanMissionStatus'
+        bin:
+          oneOf:
+            - $ref: '#/components/schemas/BinStatus'
+            - type: 'null'
+        bat_pct:
+          type:
+            - integer
+            - 'null'
+        pose:
+          oneOf:
+            - $ref: '#/components/schemas/Pose'
+            - type: 'null'
+        observed_at_unix:
+          type: integer
+          minimum: 0
+
+    SignalInfo:
+      type: object
+      additionalProperties: false
+      properties:
+        rssi:
+          type:
+            - integer
+            - 'null'
+        snr:
+          type:
+            - integer
+            - 'null'
+
+    RobotState:
+      type: object
+      additionalProperties: false
+      properties:
+        clean_mission_status:
+          oneOf:
+            - $ref: '#/components/schemas/CleanMissionStatus'
+            - type: 'null'
+        bin:
+          oneOf:
+            - $ref: '#/components/schemas/BinStatus'
+            - type: 'null'
+        bat_pct:
+          type:
+            - integer
+            - 'null'
+        pose:
+          oneOf:
+            - $ref: '#/components/schemas/Pose'
+            - type: 'null'
+        name:
+          type:
+            - string
+            - 'null'
+        signal:
+          oneOf:
+            - $ref: '#/components/schemas/SignalInfo'
+            - type: 'null'
+        raw:
+          type: object
+          additionalProperties: true
+
+    RobotDiscoveryInfo:
+      type: object
+      additionalProperties: true
+      required:
+        - hostname
+        - ip
+      properties:
+        ver:
+          type:
+            - string
+            - 'null'
+        hostname:
+          type: string
+        robotname:
+          type:
+            - string
+            - 'null'
+        ip:
+          type: string
+          pattern: ^(?:\d{1,3}\.){3}\d{1,3}$
+        mac:
+          type:
+            - string
+            - 'null'
+        sw:
+          type:
+            - string
+            - 'null'
+        sku:
+          type:
+            - string
+            - 'null'
+        nc:
+          type:
+            - integer
+            - 'null'
+        proto:
+          type:
+            - string
+            - 'null'
+        blid:
+          type:
+            - string
+            - 'null'
+
+    ErrorCode:
+      type: string
+      enum:
+        - validation_error
+        - connection_error
+        - authentication_error
+        - publish_error
+        - timeout_error
+        - protocol_error
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+        details:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+
+    CarpetBoostMode:
+      type: string
+      enum: [auto, performance, eco]
+
+    CleaningPasses:
+      type: string
+      enum: [auto, one, two]
+
+    StateField:
+      type: string
+      enum:
+        - clean_mission_status
+        - bin
+        - bat_pct
+        - pose
+        - name
+        - signal
